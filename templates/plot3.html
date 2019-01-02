@@ -1,0 +1,619 @@
+<html>
+<head>
+<meta charset='utf-8'>
+<style>
+/* Radio button */
+.custom-radio input[type="radio"] {
+    display:none;
+}
+.custom-radio input[type="radio"] + label {
+    font-size:14px;
+    color: black;
+    cursor: pointer;
+}
+.custom-radio input[type="radio"] + label span {
+    display:inline-block;
+    width:10px;
+    height:10px;
+    margin:-1px 4px 0 0;
+    vertical-align:middle;
+    cursor:pointer;
+    -moz-border-radius:  50%;
+    border-radius:  50%;
+}
+.custom-radio input[type="radio"] + label span {
+    background-color: #c4c4c4; /* have to be of the same color */
+    border: 2px solid #c4c4c4; /* have to be of the same color */
+}
+/* Checked state for radio */
+.custom-radio input[type='radio']:checked + label span{
+     background-color: #31A354;
+}
+
+label {
+          margin-right: 1rem;
+}
+
+fieldset {
+          border: none;
+}
+
+legend {
+          font-weight: bold;
+}
+
+
+path.line {
+        fill: none;
+        stroke: steelblue;
+        stroke-width: 1.5px;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+}
+
+
+.bar rect {
+    fill: steelblue;
+}
+
+.bar text {
+    fill: #fff;
+    font: 10px sans-serif;
+}
+
+line.goal {
+        stroke:green;
+        stroke-width:1px;
+}
+
+line {
+        stroke-width:1px;
+}
+
+.line {
+  z-index: -1;
+  fill: none;
+  stroke: steelblue;
+  stroke-width: 2px;
+}
+
+.grid line {
+  stroke: lightgrey;
+  stroke-opacity: 0.7;
+  shape-rendering: crispEdges;
+  z-index: -1;
+}
+
+.grid path {
+  stroke-width: 0;
+}
+</style>
+</head>
+<body>
+<div class='custom-radio'>
+  <div>
+    <input type='radio' id='grouped' name='mode' value='grouped'>
+    <label for='grouped'><span></span> Grouped</label>
+  </div>
+  <div>
+    <input type='radio' id='stacked' name='mode' value='stacked' checked>
+    <label for='stacked'><span></span> Stacked</label>
+  </div>
+</div>
+<svg width='960' height='500'></svg>
+<script src='https://d3js.org/d3.v4.min.js'></script>
+<script src='https://d3js.org/d3-queue.v2.min.js'></script>
+<script
+src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js" integrity="sha384-FZY+KSLVXVyc1qAlqH9oCx1JEOlQh6iXfw3o2n3Iy32qGjXmUPWT9I0Z9e9wxYe3" crossorigin="anonymous"></script>
+<script src='https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.21.1/babel.min.js'></script>
+
+<script lang='babel' type='text/babel'>
+var chartMode;
+var seriesNames;
+var values;
+var indexes;
+var layers;
+var lastHoveredBarIndex;
+var containerWidth = 900;
+var containerHeight = 500;
+var enabledSeries = function () { return _.reject(seriesNames, function (series) {return series.disabled; }); };
+var seriesClass = function (seriesName) { return "series-" +seriesName; };
+var layerClass = function (d) { return "layer " + seriesClass(d.name); };
+var legendSeriesClass = function (d) { return "clickable " + seriesClass(d); };
+var stack;
+var barDelay = function (d, i) { return i * delayBetweenBarAnimation; };
+var joinKey = function (d) { return d.name; };
+var margin = {top: 70, right: 0, bottom: 20, left: 30};
+var width = containerWidth - margin.left - margin.right;
+var height = containerHeight - margin.top - margin.bottom;
+var x = d3.scaleTime().range([0, width]);
+var y = d3.scaleLinear().range([height, 0]);
+var numSamples = 22;
+var numSeries;
+var widthPerStack = width / numSamples;
+var animationDuration = 400;
+var delayBetweenBarAnimation = 10;
+var numYAxisTicks = 8;
+var maxStackY;
+var paddingBetweenLegendSeries = 5;
+var legendSeriesBoxX = 0;
+var legendSeriesBoxY = 0;
+var legendSeriesBoxWidth = 15;
+var legendSeriesBoxHeight = 15;
+//var legendSeriesHeight = legendSeriesBoxHeight + paddingBetweenLegendSeries;
+var legendSeriesLabelX = -5;
+var legendSeriesLabelY = legendSeriesBoxHeight / 2;
+var legendMargin = 20;
+var legendX = containerWidth - legendSeriesBoxWidth - legendMargin;
+var legendY = legendMargin;
+var numEnabledSeries;
+
+
+var limits = {maxY:null, minY:null, maxX:null, minX:null};
+var padding = {top:20,bottom:150,left:100,right:20};
+
+var binsScale = d3.scaleBand()
+    .domain(d3.range(numSamples))
+    .rangeRound([0, width], 0.1, 0.05);
+
+var xScale = d3.scaleLinear()
+    .domain([0, numSamples])
+    .range([0, width]);
+
+var yScale = d3.scaleLinear()
+    .domain([0, maxStackY])
+    .range([height, 0]);
+
+var heightScale = d3.scaleLinear()
+    .domain([0, maxStackY])
+    .range([0, height]);
+
+var xAxis = d3.axisBottom(xScale).ticks(5); //binsScale)
+ //   .ticks(numSamples);
+
+var yAxis = d3.axisLeft(yScale).ticks(5);
+
+var stackedBarX = function (d) { return binsScale(d.x); };
+
+var stackedBarY = function (d) { return yScale(d.y0 + d.y); };
+
+var stackedBarBaseY = function (d) { return yScale(d.y0); };
+
+var x_Scale = d3.scaleBand()
+    .domain(d3.range(0, 10))
+    .range([0, width]);
+
+var y_Scale = d3.scaleBand()
+    .domain(d3.range(0, 10))
+    .range([0, width]);
+
+var yAxis = d3.axisLeft(yScale).ticks(5);
+
+var stackedBarWidth = x_Scale.bandwidth();
+
+var groupedBarX = function (d, i, j) { return binsScale(d.x) + j *
+groupedBarWidth(); };
+
+var groupedBarY = function (d) { return yScale(d.y); };
+
+var groupedBarBaseY = height;
+
+var groupedBarWidth = function () { return binsScale.scaleBand() / numEnabledSeries; };
+
+var barHeight = function (d) { return heightScale(d.y); };
+
+var transitionStackedBars = function (selection) {
+    selection.transition()
+        .duration(animationDuration)
+        .delay(barDelay)
+        .attr("y", stackedBarY)
+        .attr("height", barHeight);
+};
+
+
+
+var svg = d3.select("svg");
+
+
+var canvas = svg.append("g")
+                    .attr("id","canvas")
+                    .attr("width", width)
+                    .attr("height", height)
+                    .attr("transform","translate("+padding.left+","+padding.top+")")
+                    ;
+var gX;
+var gY;
+// define the line
+var valueline = d3.line()
+    .x(function(d) { return x(d.date); })
+    .y(function(d) { return y(d.close); });
+
+// gridlines in x axis function
+function make_x_gridlines() {       
+    return d3.axisBottom(x)
+        .ticks(5)
+}
+
+// gridlines in y axis function
+function make_y_gridlines() {       
+    return d3.axisLeft(y)
+        .ticks(5)
+}
+
+function runqueue() {
+    const queue = d3_queue.queue();
+
+    queue
+      .defer(d3.json, '/plotapi')
+      .await(render);
+    return false;
+}
+
+function render(error, data) {
+  const seriesKeys = Object.keys(data.values[0]).slice(0, Object.keys(data.values[0]).length - 1);
+  seriesNames = Object.keys(data.indexes).slice(0, Object.keys(data.indexes).length );
+
+  numSeries = seriesNames.length;
+
+  // numSeries = 10; //data.values.length;
+  // maxStackY = d3.max(data.values, function (series) { return d3.max(series.values, function (d) { return d.y0 + d.y; }); });
+
+  console.log('Object.keys(data[0])', Object.keys(data.values));
+  console.log('seriesKeys', seriesKeys);
+
+  const stackedData = d3.stack()
+    .keys(seriesKeys)(data.values);
+
+  const yMaxGrouped = d3.max(data.values, d => d3.max(Object.values(d)));
+  const yMaxStacked = d3.max(data.values, d => d3.sum(Object.values(d)));
+  const n = Object.keys(data.values[0]).length; // the number of series
+  const m = d3.range(data.values.length); // the number of values per series
+  indexes = data.indexes;
+  
+  enabledSeries = function () { return _.reject(data.indexes, function (series) {return series.disabled; }); };
+  values = data.values;
+  numEnabledSeries = enabledSeries.length;
+  console.log('stackedData', stackedData);
+  console.log('yMaxGrouped', yMaxGrouped);
+  console.log('yMaxStacked', yMaxStacked);
+  console.log('n, the number of series', n);
+  console.log('m, the number of values per series', m);
+  const svg = d3.select('svg');
+
+
+  const controlHeight = 50;
+  const margin = {top: 10, right: 10, bottom: 20, left: 10};
+  const width = +svg.attr('width') - margin.left - margin.right;
+  const height = +svg.attr('height') - controlHeight - margin.top - margin.bottom;
+  const g = svg.append('g')
+    .attr('transform', `translate(${margin.left},${margin.top})`);
+
+  const colors = ['#6b486b', '#7b6888', '#8a89a6', '#98abc5', '#d0743c', '#ff8c00']
+  const x = d3.scaleBand()
+    .domain(m)
+    .rangeRound([0, width])
+    .padding(0.08);
+
+  const y = d3.scaleLinear()
+  .domain([0, yMaxStacked])
+    .range([height, 0]);
+
+  const color = d3.scaleOrdinal()
+    .domain(d3.range(n))
+    .range(colors.slice(0, 4)); // greens
+
+
+  var z = d3.scaleOrdinal()
+    .range(colors)
+
+  const series = g.selectAll('.series')
+    .data(stackedData)
+    .enter().append('g')
+      .attr("class", "grid-lines")
+      .attr('fill', (d, i) => color(i));
+   
+  const rect = series.selectAll('rect')
+    .data(d => d)
+    .enter().append('rect')
+      .attr('x', (d, i) => x(i))
+      .attr('y', height)
+      .attr('width', x.bandwidth())
+      .attr('height', 0);
+
+    rect.attr("class", "grid-lines")
+    .selectAll(".grid-line").data(yScale.ticks(numYAxisTicks))
+        .enter().append("line")
+            .attr("class", "grid-line")
+            .attr("x1", 0)
+            .attr("x2", width)
+            .attr("y1", yScale)
+            .attr("y2", yScale);
+
+
+  //stack(data.values);
+
+
+  var legend = g.append('g')
+      .attr('font-size', 12)
+      .attr('text-anchor', 'end')
+  legend.append('text')
+      .text('Tasks')
+      .attr('x', width-10)
+      .style('font-weight', 'bold')
+      .attr('dy', 0)
+      .attr('dx', 10);
+  d3.selectAll('input')
+      .on('change', changed);
+
+  var legendEnter = legend
+    .selectAll('g')
+    .data(data.indexes)
+    .enter().append('g')
+      .attr('transform', function (d, i) { return 'translate(0,' + i * 20 + ')'
+  }).on("click", toggleSeries);
+
+  legendEnter.append('rect')
+      .attr('dy', 10)
+      .attr('x', width - 19)
+      .attr('y', 10)
+      .attr('width', 19)
+      .attr('height', 19)
+      .attr('fill', z);
+  legendEnter.append('text')
+      .attr('x', width - 24)
+      .attr('y', 20)
+      .attr('dy', '0.32em')
+      .text(d => d);
+
+  rect.transition()
+    .delay((d, i) => i * 10)
+    .attr('y', d => y(d[1]))
+    .attr('height', d => y(d[0]) - y(d[1]));
+
+  g.append('g')
+    .attr('class', 'axis axis--x')
+    .attr('transform', `translate(0,${height})`)
+    .call(d3.axisBottom(x)
+      .tickSize(0)
+      .tickPadding(6));
+
+  d3.selectAll('input')
+    .on('change', changed);
+
+  var mainArea = svg.append("g")
+    .attr("class", "main-area")
+    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+ 
+/* 
+  mainArea.append("g")
+    .attr("class", "grid-lines")
+    .selectAll(".grid-line").data(yScale.ticks(numYAxisTicks))
+        .enter().append("line")
+            .attr("class", "grid-line")
+            .attr("x1", 0)
+            .attr("x2", width)
+            .attr("y1", yScale)
+            .attr("y2", yScale);
+
+    var layersArea = mainArea.append("g")
+            .attr("class", "layers");
+
+    layers = svg.selectAll(".layer").data(data)
+                .enter().append("g")
+                .attr("class", layerClass);
+
+    layers.selectAll("rect").data(function (d) { return d.values; })
+          .enter().append("rect")
+          .attr("x", stackedBarX)
+          .attr("y", height)
+          .attr("width", stackedBarWidth)
+          .attr("height", 0)
+          .call(transitionStackedBars); 
+*/
+/*
+    mainArea.append("g")
+        .attr("class", "y axis")
+        .attr("transform", "translate(6, 10)").call(yAxis);
+   var layersArea = mainArea.append("g")
+                         .attr("class", "layers");
+*/
+/*
+  mainArea.append("path")
+      .data([data])
+      .attr("class", "line")
+      .attr("d", valueline);
+
+
+  mainArea.append("g")
+      .attr("class", "grid")
+      .call(make_y_gridlines()
+          .tickSize(-width)
+          .tickFormat("")
+      )
+
+  mainArea.append("g")
+      .attr("class", "grid")
+      .attr("transform", "translate(0," + height + ")")
+      .call(make_x_gridlines()
+          .tickSize(-height)
+          .tickFormat("")
+      )
+*/
+
+  const timeout = d3.timeout(() => {
+    d3.select('input[value=\'stacked\']')
+      .property('checked', true)
+      .dispatch('change');
+  }, 2000);
+  
+
+  function changed() {
+    timeout.stop();
+    if (this.value === 'grouped') transitionGrouped();
+    else transitionStacked();
+  }
+
+  function transitionGrouped() {
+    y.domain([0, yMaxGrouped]);
+    chartMode = "grouped";
+    rect.transition()
+      .duration(500)
+      .delay((d, i) => i * 10)
+      .attr('x', function(d, i) {
+        return x(i) + x.bandwidth() / n * this.parentNode.__data__.key;
+      })
+      .attr('width', x.bandwidth() / n)
+      .transition()
+        .attr('y', d => y(d[1] - d[0]))
+        .attr('height', d => y(0) - y(d[1] - d[0]));
+  }
+
+  function toggleSeries() {
+      return false;
+  }
+
+  function transitionStacked() {
+    y.domain([0, yMaxStacked]);
+    chartMode = "stacked";
+    rect.transition()
+      .duration(500)
+      .delay((d, i) => i * 10)
+      .attr('y', d => y(d[1]))
+      .attr('height', d => y(d[0]) - y(d[1]))
+      .transition()
+        .attr('x', (d, i) => x(i))
+        .attr('width', x.bandwidth());
+  }
+}
+
+/**
+ * Removes a certain series.
+ */
+function removeSeries () {
+    var layerToBeRemoved;
+
+    layerToBeRemoved = layers.exit();
+       
+    if (chartMode === "stacked") {
+        removeStackedSeries(layerToBeRemoved);
+    }
+    else {
+        removeGroupedSeries(layerToBeRemoved);
+    }
+}
+
+
+/**
+ * Adds a certain series.
+ */
+function addSeries () {
+    var newLayer;
+
+    newLayer = layers.enter().append("g")
+        .attr("class", layerClass);
+
+    if (chartMode === "stacked") {
+        addStackedSeries(newLayer);
+    }
+    else {
+        addGroupedSeries(newLayer);
+    }
+}
+
+/**
+ * Smoothly transitions and adds a certain series when the chart is in
+ * `stacked` mode.
+ * @param {d3.selection} newLayer The new layer to be added
+ */
+function addStackedSeries (newLayer) {
+    newLayer.selectAll("rect").data(function (d) { return d.values; })
+        .enter().append("rect")
+            .attr("x", stackedBarX)
+            .attr("y", stackedBarBaseY)
+            .attr("width", stackedBarWidth)
+            .attr("height", 0);
+
+    transitionStackedBars(layers.selectAll("rect"));
+}
+
+/**
+ * Calculates the height of the highest (not tallest) bar within a certain bin.
+ * @return {Number} The height, in pixels, of the highest bar within a certain
+ * bin
+ */
+function highestBinBarHeight() {
+    var bars,
+        highestGroupBar;
+
+    if (chartMode === "stacked") {
+        highestGroupBar = _.last(layers.data()).values[lastHoveredBarIndex];
+        return yScale(highestGroupBar.y0 + highestGroupBar.y);
+    }
+    else {
+        bars = _.map(layers.data(), function (series) { return
+series.values[lastHoveredBarIndex]; });
+        highestGroupBar = _.max(bars, function (bar) { return bar.y; });
+        return yScale(highestGroupBar.y);
+    }
+}
+
+/**
+ * Smoothly transitions and adds a certain series when the chart is in
+ * `grouped` mode.
+ * @param {d3.selection} newLayer The new layer to be added
+ */
+function addGroupedSeries (newLayer) {
+    var newBars;
+
+    layers.selectAll("rect").transition()
+        .duration(animationDuration)
+        .delay(barDelay)
+        .attr("x", groupedBarX)
+        .attr("width", groupedBarWidth)
+        .call(endAll, function () {
+            newBars = newLayer.selectAll("rect").data(function (d) { return
+d.values; })
+                .enter().append("rect")
+                    .attr("y", groupedBarBaseY)
+                    .attr("width", groupedBarWidth)
+                    .attr("height", 0);
+
+            layers.selectAll("rect").attr("x", groupedBarX);
+
+            newBars.transition()
+                .duration(animationDuration)
+                .delay(barDelay)
+                .attr("y", groupedBarY)
+                .attr("height", barHeight);
+        });
+}
+
+/**
+ * Calls a function at the end of **all** transitions.
+ * @param {d3.transition} transition A D3 transition
+ * @param {Function}      callback   The function to be called at the end of
+ * **all** transitions
+ */
+function endAll (transition, callback) {
+    var n;
+
+    if (transition.empty()) {
+        callback();
+    }
+    else {
+        n = transition.size();
+        transition.each("end", function () {
+            n--;
+            if (n === 0) {
+                callback();
+            }
+        });
+    }
+}
+
+
+runqueue();
+</script>
+</body>
+</html>
