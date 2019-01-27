@@ -1,0 +1,72 @@
+<html>
+<head>
+{% block head %}
+    <meta charset="utf-8">
+    <title>Knockoutex proof-of-concept</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+{% endblock %}
+</head>
+<body>
+    <div id="content">
+    {% block content %}
+
+    <h4 data-bind="click: function(){debugger}">Person:</h4>
+    <span data-bind="visible: !isEditMode()">
+        <span data-bind="text: globalState().person().firstname"></span>
+        <span data-bind="text: globalState().person().surname"></span>
+        <button data-bind="click: startEditMode, disable:
+isEditDisabled">Edit</button>
+    </span>
+    <form data-bind="visible: isEditMode">
+          <input type="text" id="todos-enter" value="" />
+    </form>
+    </div>
+
+    <div>
+    <h4>Todos:</h4>
+    <div id="todos"></div>
+    </ul>
+    </div>
+
+    {% endblock %}
+    </div>
+    <script src="http://code.jquery.com/jquery-3.3.1.js"></script>
+    <script>
+     function validate_url(xml_url) {
+         event.preventDefault();
+         var arr = {"url": xml_url};
+         var regex = /^(?:https?:\/\/)?(?:www\.)?/i;
+
+         $.ajax({
+             async: true,
+             crossDomain: true,
+             method: "GET",
+             headers: {
+                 "content-type": "application/x-www-form-urlencoded"
+             },
+             url: "http://3dact.com/linkapi?url="+xml_url,
+             dataType: 'json',
+             contentType: "application/json; charset=utf-8",
+             success: function(data) {
+                   if (data.status === 200) {
+                       $('#todos').html(data.response);
+                   } else {
+                       $('#todos').html("Invalid url");
+                   }
+                   console.log("SUCCESS ");
+             },
+             error: function(data) {
+                   console.log("ERROR "+data); 
+             }
+          });
+      }
+
+     $(document).ready(function() {
+          $('#todos-enter').keyup(function(){
+               let xml_url =  $('#todos-enter').val();
+               validate_url(xml_url);
+           });
+     });
+    </script>
+</body>
+</html>
